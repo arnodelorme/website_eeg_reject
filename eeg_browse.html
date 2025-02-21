@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>EEG CSV Viewer</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+      text-align: center;
+    }
+    #eegCanvas {
+      background: #f0f0f0;
+      border: 1px solid #ccc;
+      display: block;
+      margin: 0 auto;
+    }
+    .controls {
+      margin: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>EEG CSV Viewer</h1>
+  <canvas id="eegCanvas" width="800" height="600"></canvas>
+  <div class="controls">
+    <div style="display: inline-block;">
+      <button id="scrollLeft"><<</button>
+      <button id="scrollLeftFine"><</button>
+      <button id="scrollRightFine">></button>
+      <button id="scrollRight">>></button>
+    </div>
+    <div style="margin-top: 10px;">
+      <label for="scaleInput">Vertical Scale:</label>
+      <input type="number" id="scaleInput" step="0.1" value="0.5" style="width: 80px;">
+    </div>
+    <div style="margin-top: 10px;">
+      <label for="scrollStepInput">Scroll Step (seconds):</label>
+      <input type="number" id="scrollStepInput" step="0.1" value="0.5" style="width: 80px;">
+    </div>
+    <div style="margin-top: 10px;">
+      <label for="secondsVisibleInput">Window Width (seconds):</label>
+      <input type="number" id="secondsVisibleInput" step="1" value="5" style="width: 80px;">
+    </div>
+  </div>
+
+  <script>
+    // Configuration
+    const sampleRate = 256;                 // samples per second
+    let secondsVisible = 5;                 // changed to variable
+    let samplesVisible = sampleRate * secondsVisible; // changed to variable
+    let scrollStep = Math.floor(sampleRate * 0.5);
+    let verticalScale = 0.01;
+
+    // Global variables
+    let eegData = [];
+    let windowStart = 0;
+    let selections = [];        // Array to store multiple selections
+    let isSelecting = false;    // Flag to track if we're currently selecting
+    let selectionStart = null;  // Temporary selection start while dragging
+    let lastMouseX = 0;
+
+    const canvas = document.getElementById('eegCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Fetch and parse the CSV file.
+    // Here we assume each row is one time sample and each column represents a different channel.
+    fetch('raw_data.csv')
+      .then(response => response.text())
+      .then(text => {
+        // Split by newline to get rows
+        const rows = text.trim().split('\n').map(row => row.split(',').map(val => parseFloat(val)));
+        // Transpose the data so that each array represents one channel
+        const numChannels = rows[0].length;
+        eegData = Array.from({ length: numChannels }, () => []);
+        rows.forEach(row => {
+          row.forEach((value, colIndex) => {
+            eegData[colIndex].push(value);
+          });
+        });
+        // Start drawing once data is loaded
+        draw();
+      })
+      .catch(error => {
+        console.error('Error loading CSV file:', error);
+      });
+
+    // Draw the current window of data for all channels
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (!eegData.length) return; // no data to draw
+
+      const numChannels = eegData.length;
+      const channelHeight = canvas.height / numChannels;
+
+      // For each channel, draw its data in its own horizontal band.
+      for (let ch = 0; ch < numChannels; ch++) {
+        const channelData = eegData[ch];
+        const totalSamples = channelData.length;
+        // Ensure we don't exceed available data.
+        const windowEnd = Math.min(windowStart + samplesVisible, totalSamples);
+
+        ctx.beginPath();
+        for (let i = windowStart; i < windowEnd; i++) {
+          // x coordinate is proportional to the position within the visible window
+          const x = ((i - windowStart) / samplesVisible) * canvas.width;
+          // Modified scale calculation
+          const scale = (channelHeight / 2) * verticalScale;  
+          const baseline = ch * channelHeight + channelHeight / 2;
+          // Invert the value so that larger values appear upward.
+          const y = baseline - (channelData[i] * scale);
+
+          if (i === windowStart) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Draw a horizontal line at the baseline for reference.
+        ctx.beginPath();
+        ctx.moveTo(0, ch * channelHeight + channelHeight / 2);
+        ctx.lineTo(canvas.width, ch * channelHeight + channelHeight / 2);
+        ctx.strokeStyle = '#ccc';
+        ctx.stroke();
+      }
+
+      // Draw all saved selections
+      selections.forEach((selection, index) => {
+        const startX = ((selection.start - windowStart) / samplesVisible) * canvas.width;
+        const endX = ((selection.end - windowStart) / samplesVisible) * canvas.width;
+        
+        // Draw semi-transparent overlay
+        ctx.fillStyle = 'rgba(0, 123, 255, 0.2)';
+        ctx.fillRect(
+          Math.min(startX, endX), 
+          0, 
+          Math.abs(endX - startX), 
+          canvas.height
+        );
+        
+        // Draw vertical lines at selection boundaries
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(0, 123, 255, 0.8)';
+        ctx.setLineDash([5, 5]);
+        ctx.moveTo(startX, 0);
+        ctx.lineTo(startX, canvas.height);
+        ctx.moveTo(endX, 0);
+        ctx.lineTo(endX, canvas.height);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
+
+      // Draw current selection while dragging
+      if (isSelecting && selectionStart !== null) {
+        const currentSampleIndex = getMouseSampleIndex(lastMouseX);
+        const startX = ((selectionStart - windowStart) / samplesVisible) * canvas.width;
+        const endX = ((currentSampleIndex - windowStart) / samplesVisible) * canvas.width;
+        
+        ctx.fillStyle = 'rgba(0, 123, 255, 0.2)';
+        ctx.fillRect(
+          Math.min(startX, endX), 
+          0, 
+          Math.abs(endX - startX), 
+          canvas.height
+        );
+        
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(0, 123, 255, 0.8)';
+        ctx.setLineDash([5, 5]);
+        ctx.moveTo(startX, 0);
+        ctx.lineTo(startX, canvas.height);
+        ctx.moveTo(endX, 0);
+        ctx.lineTo(endX, canvas.height);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    // Convert mouse X position to sample index
+    function getMouseSampleIndex(mouseX) {
+      const rect = canvas.getBoundingClientRect();
+      const x = mouseX - rect.left;
+      const sampleOffset = (x / canvas.width) * samplesVisible;
+      return Math.floor(windowStart + sampleOffset);
+    }
+
+    // Check if a point is within a selection
+    function isPointInSelection(sampleIndex, selection) {
+      const minIndex = Math.min(selection.start, selection.end);
+      const maxIndex = Math.max(selection.start, selection.end);
+      return sampleIndex >= minIndex && sampleIndex <= maxIndex;
+    }
+
+    // Mouse event handlers
+    canvas.addEventListener('mousedown', (e) => {
+      if (e.button === 0) { // Left click
+        const clickedSampleIndex = getMouseSampleIndex(e.clientX);
+        
+        // Check if click is within any existing selection
+        const clickedSelectionIndex = selections.findIndex(selection => 
+          isPointInSelection(clickedSampleIndex, selection)
+        );
+
+        if (clickedSelectionIndex !== -1) {
+          // Remove the clicked selection
+          selections.splice(clickedSelectionIndex, 1);
+          draw();
+        } else {
+          // Start new selection
+          isSelecting = true;
+          selectionStart = clickedSampleIndex;
+          lastMouseX = e.clientX;
+          draw();
+        }
+      }
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (isSelecting) {
+        lastMouseX = e.clientX;
+        draw();
+      }
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+      if (isSelecting) {
+        const selectionEnd = getMouseSampleIndex(e.clientX);
+        // Only add selection if it spans some distance
+        if (Math.abs(selectionEnd - selectionStart) > 1) {
+          selections.push({
+            start: selectionStart,
+            end: selectionEnd
+          });
+        }
+        isSelecting = false;
+        selectionStart = null;
+        draw();
+      }
+    });
+
+    canvas.addEventListener('mouseleave', (e) => {
+      if (isSelecting) {
+        const selectionEnd = getMouseSampleIndex(e.clientX);
+        if (Math.abs(selectionEnd - selectionStart) > 1) {
+          selections.push({
+            start: selectionStart,
+            end: selectionEnd
+          });
+        }
+        isSelecting = false;
+        selectionStart = null;
+        draw();
+      }
+    });
+
+    // Update the display when scrolling
+    function scrollData(direction, isFine = false) {
+      if (!eegData.length) return;
+
+      const step = isFine ? Math.floor(scrollStep / 5) : scrollStep;
+      const totalSamples = eegData[0].length;
+      
+      if (direction === 'left') {
+        windowStart = Math.max(0, windowStart - step);
+      } else if (direction === 'right') {
+        windowStart = Math.min(totalSamples - samplesVisible, windowStart + step);
+      }
+      draw();
+    }
+
+    // Set up button event listeners
+    document.getElementById('scrollLeft').addEventListener('click', () => {
+      scrollData('left');
+    });
+    document.getElementById('scrollRight').addEventListener('click', () => {
+      scrollData('right');
+    });
+    document.getElementById('scrollLeftFine').addEventListener('click', () => {
+      scrollData('left', true);
+    });
+    document.getElementById('scrollRightFine').addEventListener('click', () => {
+      scrollData('right', true);
+    });
+
+    // Set up scale input event listener
+    const scaleInput = document.getElementById('scaleInput');
+    scaleInput.addEventListener('input', (e) => {
+      const newScale = parseFloat(e.target.value);
+      if (!isNaN(newScale) && newScale > 0) {
+        verticalScale = newScale;
+        draw();
+      }
+    });
+
+    // Initialize scale input with default value
+    scaleInput.value = verticalScale;
+
+    // Set up scroll step input event listener
+    const scrollStepInput = document.getElementById('scrollStepInput');
+    scrollStepInput.addEventListener('input', (e) => {
+      const newStepSeconds = parseFloat(e.target.value);
+      if (!isNaN(newStepSeconds) && newStepSeconds > 0) {
+        scrollStep = Math.floor(sampleRate * newStepSeconds);
+      }
+    });
+
+    // Initialize scroll step input with default value (0.5 seconds)
+    scrollStepInput.value = scrollStep / sampleRate;
+
+    // Set up seconds visible input event listener
+    const secondsVisibleInput = document.getElementById('secondsVisibleInput');
+    secondsVisibleInput.addEventListener('input', (e) => {
+      const newSeconds = parseFloat(e.target.value);
+      if (!isNaN(newSeconds) && newSeconds > 0) {
+        secondsVisible = newSeconds;
+        samplesVisible = sampleRate * secondsVisible;
+        draw();
+      }
+    });
+
+    // Initialize seconds visible input with default value
+    secondsVisibleInput.value = secondsVisible;
+  </script>
+</body>
+</html>
