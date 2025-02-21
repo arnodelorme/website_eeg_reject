@@ -14,6 +14,20 @@
       border: 1px solid #ccc;
       display: block;
       margin: 0 auto;
+      width: 90%;
+    }
+    #timeScaleCanvas {
+      display: block;
+      margin: 0 auto;
+      width: 95%;
+      height: 50px;
+    }
+    #voltageScaleCanvas {
+      position: absolute;
+      left: 0;
+      width: 50px;
+      height: 200px;
+      margin-top: 100px;
     }
     .controls {
       margin: 20px;
@@ -21,8 +35,12 @@
   </style>
 </head>
 <body>
-  <h1>EEG CSV Viewer</h1>
-  <canvas id="eegCanvas" width="800" height="600"></canvas>
+  <h1>EEG Data rejection Browser</h1>
+  <div style="position: relative;">
+    <canvas id="voltageScaleCanvas"></canvas>
+    <canvas id="eegCanvas" width="800" height="600"></canvas>
+  </div>
+  <canvas id="timeScaleCanvas"></canvas>
   <div class="controls">
     <div style="display: inline-block;">
       <button id="scrollLeft"><<</button>
@@ -31,8 +49,8 @@
       <button id="scrollRight">>></button>
     </div>
     <div style="margin-top: 10px;">
-      <label for="scaleInput">Vertical Scale:</label>
-      <input type="number" id="scaleInput" step="0.1" value="0.5" style="width: 80px;">
+      <label for="scaleInput">Vertical Scale (µV):</label>
+      <input type="number" id="scaleInput" step="0.01" value="0.2" style="width: 80px;">
     </div>
     <div style="margin-top: 10px;">
       <label for="scrollStepInput">Scroll Step (seconds):</label>
@@ -42,6 +60,19 @@
       <label for="secondsVisibleInput">Window Width (seconds):</label>
       <input type="number" id="secondsVisibleInput" step="1" value="5" style="width: 80px;">
     </div>
+    <div style="margin-top: 20px;">
+      <button id="submitButton">Submit Selections</button>
+    </div>
+    <div id="selectionInfo" style="margin-top: 20px; text-align: left; display: none;">
+      <div>
+        <h3>Channel States:</h3>
+        <div id="channelStatesList"></div>
+      </div>
+      <div style="margin-top: 10px;">
+        <h3>Time Selections:</h3>
+        <div id="timeSelectionsList"></div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -50,7 +81,7 @@
     let secondsVisible = 5;                 // changed to variable
     let samplesVisible = sampleRate * secondsVisible; // changed to variable
     let scrollStep = Math.floor(sampleRate * 0.5);
-    let verticalScale = 0.01;
+    let verticalScale = 0.01;              // Initialize scale as 1/microvolts
 
     // Global variables
     let eegData = [];
@@ -63,6 +94,85 @@
 
     const canvas = document.getElementById('eegCanvas');
     const ctx = canvas.getContext('2d');
+
+    // Add new scale drawing code
+    const timeScaleCanvas = document.getElementById('timeScaleCanvas');
+    const voltageScaleCanvas = document.getElementById('voltageScaleCanvas');
+    const timeCtx = timeScaleCanvas.getContext('2d');
+    const voltageCtx = voltageScaleCanvas.getContext('2d');
+
+    function drawScales() {
+      // Time scale
+      timeScaleCanvas.width = window.innerWidth - 40;
+      timeScaleCanvas.height = 50;
+      
+      // Calculate width for 1 second based on current display settings
+      const oneSecondPixels = (canvas.width / secondsVisible); // pixels per second
+      
+      timeCtx.beginPath();
+      timeCtx.moveTo(50, 20);
+      timeCtx.lineTo(50 + oneSecondPixels, 20);
+      
+      // Time scale vertical ends
+      timeCtx.moveTo(50, 15);
+      timeCtx.lineTo(50, 25);
+      timeCtx.moveTo(50 + oneSecondPixels, 15);
+      timeCtx.lineTo(50 + oneSecondPixels, 25);
+      
+      timeCtx.strokeStyle = 'black';
+      timeCtx.stroke();
+      
+      // Time scale label
+      timeCtx.font = '12px Arial';
+      timeCtx.textAlign = 'center';
+      timeCtx.fillText('1 second', 50 + oneSecondPixels/2, 40);
+
+      // Voltage scale
+      voltageScaleCanvas.width = 50;
+      voltageScaleCanvas.height = 200;
+      
+      // Calculate height for 100 µV based on current vertical scale
+      const channelHeight = canvas.height / eegData.length;
+      const voltageBarHeight = 100 * (channelHeight/2) * verticalScale;  // height for 100 µV
+      
+      voltageCtx.beginPath();
+      voltageCtx.moveTo(25, 50);
+      voltageCtx.lineTo(25, 50 + voltageBarHeight);
+      
+      // Voltage scale horizontal ends
+      voltageCtx.moveTo(20, 50);
+      voltageCtx.lineTo(30, 50);
+      voltageCtx.moveTo(20, 50 + voltageBarHeight);
+      voltageCtx.lineTo(30, 50 + voltageBarHeight);
+      
+      voltageCtx.strokeStyle = 'black';
+      voltageCtx.stroke();
+      
+      // Voltage scale label
+      voltageCtx.save();
+      voltageCtx.translate(15, 50 + voltageBarHeight/2);
+      voltageCtx.rotate(-Math.PI/2);
+      voltageCtx.textAlign = 'center';
+      voltageCtx.fillText('100 µV', 0, 0);
+      voltageCtx.restore();
+    }
+
+    // Call drawScales on window resize and initial load
+    window.addEventListener('resize', drawScales);
+    drawScales();
+
+    // Function to resize canvas
+    function resizeCanvas() {
+      const padding = 40; // Account for body margins
+      canvas.width = window.innerWidth - padding;
+      draw(); // Redraw after resize
+    }
+
+    // Add window resize listener
+    window.addEventListener('resize', resizeCanvas);
+
+    // Initial canvas size setup
+    resizeCanvas();
 
     // Fetch and parse the CSV file.
     // Here we assume each row is one time sample and each column represents a different channel.
@@ -80,7 +190,7 @@
           });
         });
         // Start drawing once data is loaded
-        draw();
+        resizeCanvas(); // Use resizeCanvas instead of direct draw call
       })
       .catch(error => {
         console.error('Error loading CSV file:', error);
@@ -314,15 +424,17 @@
     // Set up scale input event listener
     const scaleInput = document.getElementById('scaleInput');
     scaleInput.addEventListener('input', (e) => {
-      const newScale = parseFloat(e.target.value);
-      if (!isNaN(newScale) && newScale > 0) {
-        verticalScale = newScale;
+      const displayValue = parseFloat(e.target.value);
+      if (!isNaN(displayValue) && displayValue > 0) {
+        const microvolts = displayValue * 1000;  // Convert display value to microvolts
+        verticalScale = 200 / microvolts;  // Inverse relationship: larger µV = smaller scale
         draw();
+        drawScales();
       }
     });
 
     // Initialize scale input with default value
-    scaleInput.value = verticalScale;
+    scaleInput.value = 10;  // Show 0.2 for 200 µV range
 
     // Set up scroll step input event listener
     const scrollStepInput = document.getElementById('scrollStepInput');
@@ -349,6 +461,55 @@
 
     // Initialize seconds visible input with default value
     secondsVisibleInput.value = secondsVisible;
+
+    // Add submit button handler
+    document.getElementById('submitButton').addEventListener('click', () => {
+      const selectionInfo = document.getElementById('selectionInfo');
+      const channelStatesList = document.getElementById('channelStatesList');
+      const timeSelectionsList = document.getElementById('timeSelectionsList');
+      
+      // Clear previous info
+      channelStatesList.innerHTML = '';
+      timeSelectionsList.innerHTML = '';
+      
+      // Display channel states
+      const highlightedChannels = [];
+      const hiddenChannels = [];
+      channelStates.forEach((state, channel) => {
+        if (state === 1) highlightedChannels.push(channel);
+        if (state === 2) hiddenChannels.push(channel);
+      });
+      
+      if (highlightedChannels.length > 0) {
+        channelStatesList.innerHTML += `<p>Highlighted (red) channels: ${highlightedChannels.join(', ')}</p>`;
+      }
+      if (hiddenChannels.length > 0) {
+        channelStatesList.innerHTML += `<p>Hidden channels: ${hiddenChannels.join(', ')}</p>`;
+      }
+      if (highlightedChannels.length === 0 && hiddenChannels.length === 0) {
+        channelStatesList.innerHTML = '<p>No channels modified</p>';
+      }
+
+      // Display time selections
+      if (selections.length > 0) {
+        selections.forEach((selection, index) => {
+          const startTime = (selection.start / sampleRate).toFixed(2);
+          const endTime = (selection.end / sampleRate).toFixed(2);
+          timeSelectionsList.innerHTML += `
+            <p>Selection ${index + 1}: ${startTime}s to ${endTime}s 
+            (samples ${selection.start} to ${selection.end})</p>`;
+        });
+      } else {
+        timeSelectionsList.innerHTML = '<p>No time ranges selected</p>';
+      }
+
+      // Show the info div
+      selectionInfo.style.display = 'block';
+    });
+
+    // Call drawScales whenever the scale parameters change
+    scaleInput.addEventListener('input', drawScales);
+    secondsVisibleInput.addEventListener('input', drawScales);
   </script>
 </body>
 </html>
