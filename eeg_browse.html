@@ -174,8 +174,7 @@
     // Initial canvas size setup
     resizeCanvas();
 
-    // Fetch and parse the CSV file.
-    // Here we assume each row is one time sample and each column represents a different channel.
+    // Fetch and parse the CSV file
     fetch('raw_data.csv')
       .then(response => response.text())
       .then(text => {
@@ -189,8 +188,21 @@
             eegData[colIndex].push(value);
           });
         });
-        // Start drawing once data is loaded
-        resizeCanvas(); // Use resizeCanvas instead of direct draw call
+        
+        // Initialize everything after data is loaded
+        resizeCanvas();
+        draw();
+        drawScales();
+        
+        // Initialize input values
+        scaleInput.value = 10;  // Show 0.2 for 200 µV range
+        verticalScale = 200 / (scaleInput.value * 1000);  // Set initial scale
+        secondsVisibleInput.value = secondsVisible;
+        scrollStepInput.value = scrollStep / sampleRate;
+        
+        // Redraw with initial values
+        draw();
+        drawScales();
       })
       .catch(error => {
         console.error('Error loading CSV file:', error);
@@ -433,9 +445,6 @@
       }
     });
 
-    // Initialize scale input with default value
-    scaleInput.value = 10;  // Show 0.2 for 200 µV range
-
     // Set up scroll step input event listener
     const scrollStepInput = document.getElementById('scrollStepInput');
     scrollStepInput.addEventListener('input', (e) => {
@@ -444,9 +453,6 @@
         scrollStep = Math.floor(sampleRate * newStepSeconds);
       }
     });
-
-    // Initialize scroll step input with default value (0.5 seconds)
-    scrollStepInput.value = scrollStep / sampleRate;
 
     // Set up seconds visible input event listener
     const secondsVisibleInput = document.getElementById('secondsVisibleInput');
@@ -458,9 +464,6 @@
         draw();
       }
     });
-
-    // Initialize seconds visible input with default value
-    secondsVisibleInput.value = secondsVisible;
 
     // Add submit button handler
     document.getElementById('submitButton').addEventListener('click', () => {
