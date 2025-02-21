@@ -59,7 +59,7 @@
     let isSelecting = false;    // Flag to track if we're currently selecting
     let selectionStart = null;  // Temporary selection start while dragging
     let lastMouseX = 0;
-    let highlightedChannels = new Set();  // Store highlighted channel indices
+    let channelStates = new Map();  // Store channel states: 0=normal, 1=highlighted, 2=hidden
 
     const canvas = document.getElementById('eegCanvas');
     const ctx = canvas.getContext('2d');
@@ -97,6 +97,10 @@
 
       // For each channel, draw its data in its own horizontal band.
       for (let ch = 0; ch < numChannels; ch++) {
+        const channelState = channelStates.get(ch) || 0;
+        // Skip hidden channels
+        if (channelState === 2) continue;
+
         const channelData = eegData[ch];
         const totalSamples = channelData.length;
         // Ensure we don't exceed available data.
@@ -118,8 +122,8 @@
             ctx.lineTo(x, y);
           }
         }
-        // Set stroke color based on whether channel is highlighted
-        ctx.strokeStyle = highlightedChannels.has(ch) ? 'red' : 'black';
+        // Set stroke color based on channel state
+        ctx.strokeStyle = channelState === 1 ? 'red' : 'black';
         ctx.lineWidth = 1;
         ctx.stroke();
 
@@ -247,12 +251,14 @@
             end: selectionEnd
           });
         } else {
-          // If clicked without dragging, toggle channel highlight
+          // If clicked without dragging, cycle channel state
           const clickedChannel = getChannelFromY(e.clientY);
-          if (highlightedChannels.has(clickedChannel)) {
-            highlightedChannels.delete(clickedChannel);
+          const currentState = channelStates.get(clickedChannel) || 0;
+          const nextState = (currentState + 1) % 3; // Cycle through 0, 1, 2
+          if (nextState === 0) {
+            channelStates.delete(clickedChannel); // Remove normal state from map
           } else {
-            highlightedChannels.add(clickedChannel);
+            channelStates.set(clickedChannel, nextState);
           }
         }
         isSelecting = false;
