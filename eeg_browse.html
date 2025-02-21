@@ -59,6 +59,7 @@
     let isSelecting = false;    // Flag to track if we're currently selecting
     let selectionStart = null;  // Temporary selection start while dragging
     let lastMouseX = 0;
+    let highlightedChannels = new Set();  // Store highlighted channel indices
 
     const canvas = document.getElementById('eegCanvas');
     const ctx = canvas.getContext('2d');
@@ -117,7 +118,8 @@
             ctx.lineTo(x, y);
           }
         }
-        ctx.strokeStyle = 'black';
+        // Set stroke color based on whether channel is highlighted
+        ctx.strokeStyle = highlightedChannels.has(ch) ? 'red' : 'black';
         ctx.lineWidth = 1;
         ctx.stroke();
 
@@ -196,6 +198,14 @@
       return sampleIndex >= minIndex && sampleIndex <= maxIndex;
     }
 
+    // Get channel index from mouse Y position
+    function getChannelFromY(mouseY) {
+      const rect = canvas.getBoundingClientRect();
+      const y = mouseY - rect.top;
+      const channelHeight = canvas.height / eegData.length;
+      return Math.floor(y / channelHeight);
+    }
+
     // Mouse event handlers
     canvas.addEventListener('mousedown', (e) => {
       if (e.button === 0) { // Left click
@@ -211,7 +221,7 @@
           selections.splice(clickedSelectionIndex, 1);
           draw();
         } else {
-          // Start new selection
+          // Start potential selection
           isSelecting = true;
           selectionStart = clickedSampleIndex;
           lastMouseX = e.clientX;
@@ -230,12 +240,20 @@
     canvas.addEventListener('mouseup', (e) => {
       if (isSelecting) {
         const selectionEnd = getMouseSampleIndex(e.clientX);
-        // Only add selection if it spans some distance
         if (Math.abs(selectionEnd - selectionStart) > 1) {
+          // If dragged, create a selection
           selections.push({
             start: selectionStart,
             end: selectionEnd
           });
+        } else {
+          // If clicked without dragging, toggle channel highlight
+          const clickedChannel = getChannelFromY(e.clientY);
+          if (highlightedChannels.has(clickedChannel)) {
+            highlightedChannels.delete(clickedChannel);
+          } else {
+            highlightedChannels.add(clickedChannel);
+          }
         }
         isSelecting = false;
         selectionStart = null;
