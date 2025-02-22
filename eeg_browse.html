@@ -19,7 +19,7 @@
     #timeScaleCanvas {
       display: block;
       margin: 0 auto;
-      width: 95%;
+      width: 90%;
       height: 50px;
     }
     #voltageScaleCanvas {
@@ -78,9 +78,9 @@
   <script>
     // Configuration
     const sampleRate = 256;                 // samples per second
-    let secondsVisible = 5;                 // changed to variable
+    let secondsVisible = 20;                 // changed to variable
     let samplesVisible = sampleRate * secondsVisible; // changed to variable
-    let scrollStep = Math.floor(sampleRate * 0.5);
+    let scrollStep = Math.floor(sampleRate * 20);
     let verticalScale = 0.01;              // Initialize scale as 1/microvolts
 
     // Global variables
@@ -103,7 +103,7 @@
 
     function drawScales() {
       // Time scale
-      timeScaleCanvas.width = window.innerWidth - 40;
+      timeScaleCanvas.width = window.innerWidth; // - 40;
       timeScaleCanvas.height = 50;
       
       // Calculate width for 1 second based on current display settings
@@ -327,11 +327,16 @@
     // Get channel index from mouse Y position
     function getChannelFromY(mouseY) {
       const rect = canvas.getBoundingClientRect();
-      const y = mouseY - rect.top;
+      const voltageScaleCanvas = document.getElementById('voltageScaleCanvas');
+      const timeScaleCanvas = document.getElementById('timeScaleCanvas');
+      const voltageRect = voltageScaleCanvas.getBoundingClientRect();
+      const timeRect = timeScaleCanvas.getBoundingClientRect();
+      
+      const y = mouseY - rect.top;  // Account for voltage scale offset
       const channelHeight = canvas.height / eegData.length;
-      return Math.floor(y / channelHeight);
+      return Math.floor(y / (channelHeight-2)); // Const 2 here is not ideal, but it works
     }
-
+    
     // Mouse event handlers
     canvas.addEventListener('mousedown', (e) => {
       if (e.button === 0) { // Left click
