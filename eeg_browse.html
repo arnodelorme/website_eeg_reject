@@ -345,7 +345,7 @@
       for (let ch = 0; ch < numChannels; ch++) {
         const channelState = channelStates.get(ch);
         // Skip hidden channels (state 2)
-        if (channelState === 2 || (channelState && channelState.state === 2)) continue;
+        if (channelState && channelState.state === 2) continue;
 
         const channelData = eegData[ch];
         const totalSamples = channelData.length;
@@ -369,7 +369,7 @@
           }
         }
         // Set stroke color based on channel state
-        ctx.strokeStyle = channelState && (channelState.state === 1 || channelState === 1) ? 'red' : 'black';
+        ctx.strokeStyle = channelState && channelState.state === 1 ? 'red' : 'black';
         ctx.lineWidth = 1;
         ctx.stroke();
 
@@ -519,9 +519,12 @@
             pendingChannel = clickedChannel;
             channelDialog.style.display = 'flex';
           } else if (currentState.state === 1) {
-            // Change from red to hidden (state 2) without dialog
-            channelStates.set(clickedChannel, 2);
-          } else if (currentState === 2) {
+            // Change from red to hidden (state 2) while preserving artifact info
+            channelStates.set(clickedChannel, {
+              ...currentState,
+              state: 2
+            });
+          } else if (currentState.state === 2) {
             // Change from hidden back to normal (state 0)
             channelStates.delete(clickedChannel);
           }
@@ -594,8 +597,12 @@
       const highlightedChannels = [];
       const hiddenChannels = [];
       channelStates.forEach((state, channel) => {
-        if (state === 2) {
-          hiddenChannels.push(channel);
+        if (state.state === 2) {
+          hiddenChannels.push({
+            channel: channel,
+            severity: state.severity,
+            type: state.type
+          });
         } else if (state.state === 1) {
           highlightedChannels.push({
             channel: channel,
@@ -615,9 +622,14 @@
         });
       }
       
-      // Display hidden channels
+      // Display hidden channels with their artifact details
       if (hiddenChannels.length > 0) {
-        channelStatesList.innerHTML += `<p>Hidden channels: ${hiddenChannels.join(', ')}</p>`;
+        channelStatesList.innerHTML += '<p>Hidden channels:</p>';
+        hiddenChannels.forEach(info => {
+          const typeText = info.type === '50hz' ? '50 Hz noise only' : 'noise/erratic behavior';
+          channelStatesList.innerHTML += `
+            <p>Channel ${info.channel}: ${info.severity} severity, ${typeText}</p>`;
+        });
       }
       
       if (highlightedChannels.length === 0 && hiddenChannels.length === 0) {
@@ -645,6 +657,69 @@
     // Call drawScales whenever the scale parameters change
     scaleInput.addEventListener('input', drawScales);
     secondsVisibleInput.addEventListener('input', drawScales);
+
+    // Add animation variables after the other global variables
+    let isScrolling = false;
+    let scrollTarget = 0;
+    let currentScroll = 0;
+    const scrollDuration = 300; // Duration of scroll animation in ms
+    let scrollStartTime = 0;
+
+    // Update the scroll function to use animation
+    function scrollData(direction, isFine = false) {
+      if (!eegData.length || isScrolling) return;
+
+      const step = isFine ? Math.floor(sampleRate * scrollStepInput.value / 5) : Math.floor(sampleRate * scrollStepInput.value);
+      const totalSamples = eegData[0].length;
+      
+      if (direction === 'left') {
+        scrollTarget = Math.max(0, windowStart - step);
+      } else if (direction === 'right') {
+        scrollTarget = Math.min(totalSamples - samplesVisible, windowStart + step);
+      }
+
+      if (scrollTarget !== windowStart) {
+        isScrolling = true;
+        currentScroll = windowStart;
+        scrollStartTime = performance.now();
+        requestAnimationFrame(animateScroll);
+      }
+    }
+
+    // Add animation function
+    function animateScroll(currentTime) {
+      const elapsed = currentTime - scrollStartTime;
+      const progress = Math.min(elapsed / scrollDuration, 1);
+      
+      // Use easeInOutQuad for smooth animation
+      const easeProgress = progress < 0.5 
+        ? 2 * progress * progress 
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+      
+      windowStart = Math.round(currentScroll + (scrollTarget - currentScroll) * easeProgress);
+      draw();
+      drawScales();
+
+      if (progress < 1) {
+        requestAnimationFrame(animateScroll);
+      } else {
+        isScrolling = false;
+      }
+    }
+
+    // Set up button event listeners
+    document.getElementById('scrollLeft').addEventListener('click', () => {
+      scrollData('left');
+    });
+    document.getElementById('scrollRight').addEventListener('click', () => {
+      scrollData('right');
+    });
+    document.getElementById('scrollLeftFine').addEventListener('click', () => {
+      scrollData('left', true);
+    });
+    document.getElementById('scrollRightFine').addEventListener('click', () => {
+      scrollData('right', true);
+    });
   </script>
 </body>
 </html>
