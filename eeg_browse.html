@@ -158,6 +158,47 @@
     </div>
   </div>
 
+  <!-- Add this new dialog after the existing artifactDialog -->
+  <div class="dialog-overlay" id="channelDialog">
+    <div class="dialog">
+      <h3>Channel Noise Details</h3>
+      <div>
+        <p>Severity:</p>
+        <div style="text-align: left;">
+          <div>
+            <input type="radio" id="channelSeverityLow" name="channelSeverity" value="low" checked>
+            <label for="channelSeverityLow">Low</label>
+          </div>
+          <div>
+            <input type="radio" id="channelSeverityMedium" name="channelSeverity" value="medium">
+            <label for="channelSeverityMedium">Medium</label>
+          </div>
+          <div>
+            <input type="radio" id="channelSeverityStrong" name="channelSeverity" value="strong">
+            <label for="channelSeverityStrong">Strong</label>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top: 10px;">
+        <p>Type:</p>
+        <div style="text-align: left;">
+          <div>
+            <input type="radio" id="channel50Hz" name="channelType" value="50hz" checked>
+            <label for="channel50Hz">50 Hz noise only</label>
+          </div>
+          <div>
+            <input type="radio" id="channelNoiseErratic" name="channelType" value="noiseErratic">
+            <label for="channelNoiseErratic">Noise and/or erratic behavior of large amplitude</label>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top: 15px;">
+        <button id="confirmChannel">Confirm</button>
+        <button id="cancelChannel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // Configuration
     const sampleRate = 256;                 // samples per second
@@ -302,9 +343,9 @@
 
       // For each channel, draw its data in its own horizontal band.
       for (let ch = 0; ch < numChannels; ch++) {
-        const channelState = channelStates.get(ch) || 0;
-        // Skip hidden channels
-        if (channelState === 2) continue;
+        const channelState = channelStates.get(ch);
+        // Skip hidden channels (state 2)
+        if (channelState === 2 || (channelState && channelState.state === 2)) continue;
 
         const channelData = eegData[ch];
         const totalSamples = channelData.length;
@@ -328,7 +369,7 @@
           }
         }
         // Set stroke color based on channel state
-        ctx.strokeStyle = channelState === 1 ? 'red' : 'black';
+        ctx.strokeStyle = channelState && (channelState.state === 1 || channelState === 1) ? 'red' : 'black';
         ctx.lineWidth = 1;
         ctx.stroke();
 
@@ -454,6 +495,8 @@
     // Add these new variables after the other global variables
     let pendingSelection = null;
     const artifactDialog = document.getElementById('artifactDialog');
+    let pendingChannel = null;
+    const channelDialog = document.getElementById('channelDialog');
 
     // Update the mouseup event handler
     canvas.addEventListener('mouseup', (e) => {
@@ -467,14 +510,21 @@
           };
           artifactDialog.style.display = 'flex';
         } else {
-          // Handle channel state cycling (existing code)
+          // Handle channel state cycling with dialog
           const clickedChannel = getChannelFromY(e.clientY);
           const currentState = channelStates.get(clickedChannel) || 0;
-          const nextState = (currentState + 1) % 3;
-          if (nextState === 0) {
-            channelStates.delete(clickedChannel);
+          if (currentState === 0) {
+            // Show channel dialog when changing from state 0 to 1
+            pendingChannel = clickedChannel;
+            channelDialog.style.display = 'flex';
           } else {
-            channelStates.set(clickedChannel, nextState);
+            // Continue normal cycling for other states
+            const nextState = (currentState + 1) % 3;
+            if (nextState === 0) {
+              channelStates.delete(clickedChannel);
+            } else {
+              channelStates.set(clickedChannel, nextState);
+            }
           }
         }
         isSelecting = false;
@@ -507,7 +557,31 @@
       artifactDialog.style.display = 'none';
     });
 
-    // Update the submit button handler to show artifact details
+    // Add channel dialog handlers
+    document.getElementById('confirmChannel').addEventListener('click', () => {
+      if (pendingChannel !== null) {
+        const severity = document.querySelector('input[name="channelSeverity"]:checked').value;
+        const type = document.querySelector('input[name="channelType"]:checked').value;
+        
+        // Store channel with its details
+        channelStates.set(pendingChannel, {
+          state: 1,
+          severity: severity,
+          type: type
+        });
+        
+        pendingChannel = null;
+        channelDialog.style.display = 'none';
+        draw();
+      }
+    });
+
+    document.getElementById('cancelChannel').addEventListener('click', () => {
+      pendingChannel = null;
+      channelDialog.style.display = 'none';
+    });
+
+    // Update the submit button handler to show artifact and channel details
     document.getElementById('submitButton').addEventListener('click', () => {
       const selectionInfo = document.getElementById('selectionInfo');
       const channelStatesList = document.getElementById('channelStatesList');
@@ -526,7 +600,13 @@
       });
       
       if (highlightedChannels.length > 0) {
-        channelStatesList.innerHTML += `<p>Highlighted (red) channels: ${highlightedChannels.join(', ')}</p>`;
+        channelStatesList.innerHTML += '<p>Highlighted (red) channels:</p>';
+        highlightedChannels.forEach(channel => {
+          const channelInfo = channelStates.get(channel);
+          channelStatesList.innerHTML += `
+            <p>Channel ${channel}: ${channelInfo.severity} severity, 
+            ${channelInfo.type === '50hz' ? '50 Hz noise only' : 'noise/erratic behavior'}</p>`;
+        });
       }
       if (hiddenChannels.length > 0) {
         channelStatesList.innerHTML += `<p>Hidden channels: ${hiddenChannels.join(', ')}</p>`;
