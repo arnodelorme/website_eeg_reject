@@ -409,19 +409,52 @@
       }
     });
 
-    // Update the display when scrolling
+    // Add animation variables
+    let isScrolling = false;
+    let scrollTarget = 0;
+    let currentScroll = 0;
+    const scrollDuration = 300; // Duration of scroll animation in ms
+    let scrollStartTime = 0;
+
+    // Update the scroll function to use animation
     function scrollData(direction, isFine = false) {
-      if (!eegData.length) return;
+      if (!eegData.length || isScrolling) return;
 
       const step = isFine ? Math.floor(scrollStep / 5) : scrollStep;
       const totalSamples = eegData[0].length;
       
       if (direction === 'left') {
-        windowStart = Math.max(0, windowStart - step);
+        scrollTarget = Math.max(0, windowStart - step);
       } else if (direction === 'right') {
-        windowStart = Math.min(totalSamples - samplesVisible, windowStart + step);
+        scrollTarget = Math.min(totalSamples - samplesVisible, windowStart + step);
       }
+
+      if (scrollTarget !== windowStart) {
+        isScrolling = true;
+        currentScroll = windowStart;
+        scrollStartTime = performance.now();
+        requestAnimationFrame(animateScroll);
+      }
+    }
+
+    // Add animation function
+    function animateScroll(currentTime) {
+      const elapsed = currentTime - scrollStartTime;
+      const progress = Math.min(elapsed / scrollDuration, 1);
+      
+      // Use easeInOutQuad for smooth animation
+      const easeProgress = progress < 0.5 
+        ? 2 * progress * progress 
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+      
+      windowStart = Math.round(currentScroll + (scrollTarget - currentScroll) * easeProgress);
       draw();
+
+      if (progress < 1) {
+        requestAnimationFrame(animateScroll);
+      } else {
+        isScrolling = false;
+      }
     }
 
     // Set up button event listeners
