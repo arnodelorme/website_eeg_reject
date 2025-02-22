@@ -512,19 +512,18 @@
         } else {
           // Handle channel state cycling with dialog
           const clickedChannel = getChannelFromY(e.clientY);
-          const currentState = channelStates.get(clickedChannel) || 0;
-          if (currentState === 0) {
-            // Show channel dialog when changing from state 0 to 1
+          const currentState = channelStates.get(clickedChannel);
+          
+          if (!currentState || currentState === 0) {
+            // Show channel dialog when changing from normal (black) to highlighted (red)
             pendingChannel = clickedChannel;
             channelDialog.style.display = 'flex';
-          } else {
-            // Continue normal cycling for other states
-            const nextState = (currentState + 1) % 3;
-            if (nextState === 0) {
-              channelStates.delete(clickedChannel);
-            } else {
-              channelStates.set(clickedChannel, nextState);
-            }
+          } else if (currentState.state === 1) {
+            // Change from red to hidden (state 2) without dialog
+            channelStates.set(clickedChannel, 2);
+          } else if (currentState === 2) {
+            // Change from hidden back to normal (state 0)
+            channelStates.delete(clickedChannel);
           }
         }
         isSelecting = false;
@@ -581,7 +580,7 @@
       channelDialog.style.display = 'none';
     });
 
-    // Update the submit button handler to show artifact and channel details
+    // Update the submit button handler
     document.getElementById('submitButton').addEventListener('click', () => {
       const selectionInfo = document.getElementById('selectionInfo');
       const channelStatesList = document.getElementById('channelStatesList');
@@ -595,22 +594,32 @@
       const highlightedChannels = [];
       const hiddenChannels = [];
       channelStates.forEach((state, channel) => {
-        if (state === 1) highlightedChannels.push(channel);
-        if (state === 2) hiddenChannels.push(channel);
+        if (state === 2) {
+          hiddenChannels.push(channel);
+        } else if (state.state === 1) {
+          highlightedChannels.push({
+            channel: channel,
+            severity: state.severity,
+            type: state.type
+          });
+        }
       });
       
+      // Display highlighted channels with their artifact details
       if (highlightedChannels.length > 0) {
         channelStatesList.innerHTML += '<p>Highlighted (red) channels:</p>';
-        highlightedChannels.forEach(channel => {
-          const channelInfo = channelStates.get(channel);
+        highlightedChannels.forEach(info => {
+          const typeText = info.type === '50hz' ? '50 Hz noise only' : 'noise/erratic behavior';
           channelStatesList.innerHTML += `
-            <p>Channel ${channel}: ${channelInfo.severity} severity, 
-            ${channelInfo.type === '50hz' ? '50 Hz noise only' : 'noise/erratic behavior'}</p>`;
+            <p>Channel ${info.channel}: ${info.severity} severity, ${typeText}</p>`;
         });
       }
+      
+      // Display hidden channels
       if (hiddenChannels.length > 0) {
         channelStatesList.innerHTML += `<p>Hidden channels: ${hiddenChannels.join(', ')}</p>`;
       }
+      
       if (highlightedChannels.length === 0 && hiddenChannels.length === 0) {
         channelStatesList.innerHTML = '<p>No channels modified</p>';
       }
@@ -620,11 +629,10 @@
         selections.forEach((selection, index) => {
           const startTime = (selection.start / sampleRate).toFixed(2);
           const endTime = (selection.end / sampleRate).toFixed(2);
-          const artifactInfo = selection.severity ? 
-            `(${selection.severity} ${selection.type} artifact)` : '';
           timeSelectionsList.innerHTML += `
             <p>Selection ${index + 1}: ${startTime}s to ${endTime}s 
-            (samples ${selection.start} to ${selection.end}) ${artifactInfo}</p>`;
+            (samples ${selection.start} to ${selection.end}) 
+            (${selection.severity} ${selection.type} artifact)</p>`;
         });
       } else {
         timeSelectionsList.innerHTML = '<p>No time ranges selected</p>';
