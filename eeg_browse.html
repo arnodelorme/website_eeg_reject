@@ -62,10 +62,45 @@
       margin: 5px;
       padding: 5px 10px;
     }
+
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 50%;
+      background: rgba(255, 255, 255, 0.9);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 2000;
+    }
+
+    .progress-container {
+      width: 300px;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+      padding: 1px;
+      margin: 10px;
+    }
+
+    .progress-bar {
+      width: 0%;
+      height: 20px;
+      background-color: #4CAF50;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+
+    .progress-text {
+      margin: 10px;
+      font-size: 16px;
+    }
   </style>
 </head>
 <body>
-  <h1>EEG Data rejection Browser</h1>
+  <h1>EEG Data Rejection Browser</h1>
   <div style="position: relative;">
     <canvas id="voltageScaleCanvas"></canvas>
     <canvas id="eegCanvas" width="800" height="600"></canvas>
@@ -199,6 +234,14 @@
     </div>
   </div>
 
+  <!-- Add this right after the body tag -->
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="progress-text">Loading EEG Data...</div>
+    <div class="progress-container">
+      <div id="progressBar" class="progress-bar"></div>
+    </div>
+  </div>
+
   <script>
     // Configuration
     const sampleRate = 256;                 // samples per second
@@ -298,29 +341,78 @@
     // Initial canvas size setup
     resizeCanvas();
 
-    // Fetch and parse the CSV file
+    // Add this function to update the progress bar
+    function updateProgress(percent) {
+      const progressBar = document.getElementById('progressBar');
+      const progressText = document.querySelector('.progress-text');
+      progressBar.style.width = `${percent}%`;
+      progressText.textContent = `Loading EEG Data... ${Math.round(percent)}%`;
+    }
+
+    // Update the fetch and data loading code
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    
     fetch('raw_data.csv')
+      .then(response => {
+        const reader = response.body.getReader();
+        const contentLength = +response.headers.get('Content-Length');
+
+        return new ReadableStream({
+          start(controller) {
+            return pump();
+            function pump() {
+              return reader.read().then(({done, value}) => {
+                if (done) {
+                  controller.close();
+                  return;
+                }
+                controller.enqueue(value);
+                updateProgress((reader.loaded / contentLength) * 50); // First 50% for download
+                return pump();
+              });
+            }
+          }
+        });
+      })
+      .then(stream => new Response(stream))
       .then(response => response.text())
       .then(text => {
+        // Update progress to show we're processing the data
+        updateProgress(75);
+
         // Split by newline to get rows
         const rows = text.trim().split('\n').map(row => row.split(',').map(val => parseFloat(val)));
+        
+        updateProgress(85);
+
         // Transpose the data so that each array represents one channel
         const numChannels = rows[0].length;
         eegData = Array.from({ length: numChannels }, () => []);
-        rows.forEach(row => {
+        rows.forEach((row, i) => {
+          if (i % 1000 === 0) {
+            // Update progress during transposition
+            updateProgress(85 + (i / rows.length) * 14);
+          }
           row.forEach((value, colIndex) => {
             eegData[colIndex].push(value);
           });
         });
         
+        updateProgress(100);
+        
+        // Hide loading overlay
+        setTimeout(() => {
+          loadingOverlay.style.display = 'none';
+        }, 500);
+
         // Initialize everything after data is loaded
         resizeCanvas();
         draw();
         drawScales();
         
         // Initialize input values
-        scaleInput.value = 10;  // Show 0.2 for 200 µV range
-        verticalScale = 200 / (scaleInput.value * 1000);  // Set initial scale
+        scaleInput.value = 10;
+        verticalScale = 200 / (scaleInput.value * 1000);
         secondsVisibleInput.value = secondsVisible;
         scrollStepInput.value = scrollStep / sampleRate;
         
@@ -330,6 +422,10 @@
       })
       .catch(error => {
         console.error('Error loading CSV file:', error);
+        // Show error in progress text
+        const progressText = document.querySelector('.progress-text');
+        progressText.textContent = 'Error loading EEG data. Please refresh the page.';
+        progressText.style.color = 'red';
       });
 
     // Draw the current window of data for all channels
