@@ -105,29 +105,53 @@
     </div>
   </div>
 
-  <!-- Add this before the closing body tag -->
+  <!-- Replace the dialog content with radio buttons -->
   <div class="dialog-overlay" id="artifactDialog">
     <div class="dialog">
       <h3>Artifact Details</h3>
       <div>
-        <label for="severitySelect">Severity:</label>
-        <select id="severitySelect">
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="strong">Strong</option>
-        </select>
+        <p>Severity:</p>
+        <div style="text-align: left;">
+          <div>
+            <input type="radio" id="severityLow" name="severity" value="low" checked>
+            <label for="severityLow">Low</label>
+          </div>
+          <div>
+            <input type="radio" id="severityMedium" name="severity" value="medium">
+            <label for="severityMedium">Medium</label>
+          </div>
+          <div>
+            <input type="radio" id="severityStrong" name="severity" value="strong">
+            <label for="severityStrong">Strong</label>
+          </div>
+        </div>
       </div>
-      <div>
-        <label for="typeSelect">Type:</label>
-        <select id="typeSelect">
-          <option value="muscle">Muscle</option>
-          <option value="eye">Eye Movement</option>
-          <option value="movement">Head/Body Movement</option>
-          <option value="electrical">Electrical</option>
-          <option value="other">Other</option>
-        </select>
+      <div style="margin-top: 10px;">
+        <p>Type:</p>
+        <div style="text-align: left;">
+          <div>
+            <input type="radio" id="typeMuscle" name="type" value="muscle" checked>
+            <label for="typeMuscle">Muscle</label>
+          </div>
+          <div>
+            <input type="radio" id="typeEye" name="type" value="eye">
+            <label for="typeEye">Eye Movement</label>
+          </div>
+          <div>
+            <input type="radio" id="typeMovement" name="type" value="movement">
+            <label for="typeMovement">Head/Body Movement</label>
+          </div>
+          <div>
+            <input type="radio" id="typeElectrical" name="type" value="electrical">
+            <label for="typeElectrical">Electrical</label>
+          </div>
+          <div>
+            <input type="radio" id="typeOther" name="type" value="other">
+            <label for="typeOther">Other</label>
+          </div>
+        </div>
       </div>
-      <div>
+      <div style="margin-top: 15px;">
         <button id="confirmArtifact">Confirm</button>
         <button id="cancelArtifact">Cancel</button>
       </div>
@@ -459,11 +483,11 @@
       }
     });
 
-    // Add dialog event handlers
+    // Update the confirm handler to work with radio buttons
     document.getElementById('confirmArtifact').addEventListener('click', () => {
       if (pendingSelection) {
-        const severity = document.getElementById('severitySelect').value;
-        const type = document.getElementById('typeSelect').value;
+        const severity = document.querySelector('input[name="severity"]:checked').value;
+        const type = document.querySelector('input[name="type"]:checked').value;
         
         // Add the selection with artifact details
         selections.push({
