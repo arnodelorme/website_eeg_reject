@@ -529,12 +529,29 @@
       }
     }
 
-    // Convert mouse X position to sample index
+    // Replace the getMouseSampleIndex function
     function getMouseSampleIndex(mouseX) {
       const rect = canvas.getBoundingClientRect();
-      const x = mouseX - rect.left;
-      const sampleOffset = (x / canvas.width) * samplesVisible;
-      return Math.floor(windowStart + sampleOffset);
+      const canvasX = mouseX - rect.left;
+      const canvasWidth = rect.width;
+      
+      // Calculate the sample index directly from the canvas position ratio
+      const positionRatio = canvasX / canvasWidth;
+      const sampleIndex = Math.floor(windowStart + (positionRatio * samplesVisible));
+      
+      // Add logging to help debug
+      console.log({
+        mouseX,
+        rectLeft: rect.left,
+        canvasX,
+        canvasWidth,
+        positionRatio,
+        windowStart,
+        samplesVisible,
+        sampleIndex
+      });
+      
+      return sampleIndex;
     }
 
     // Check if a point is within a selection
@@ -751,8 +768,37 @@
     });
 
     // Call drawScales whenever the scale parameters change
-    scaleInput.addEventListener('input', drawScales);
-    secondsVisibleInput.addEventListener('input', drawScales);
+    const scaleInput = document.getElementById('scaleInput');
+    scaleInput.addEventListener('input', (e) => {
+      const displayValue = parseFloat(e.target.value);
+      if (!isNaN(displayValue) && displayValue > 0) {
+        const microvolts = displayValue * 1000;  // Convert display value to microvolts
+        verticalScale = 200 / microvolts;  // Inverse relationship: larger µV = smaller scale
+        draw();
+        drawScales();
+      }
+    });
+
+    // Set up scroll step input event listener
+    const scrollStepInput = document.getElementById('scrollStepInput');
+    scrollStepInput.addEventListener('input', (e) => {
+      const newStepSeconds = parseFloat(e.target.value);
+      if (!isNaN(newStepSeconds) && newStepSeconds > 0) {
+        scrollStep = Math.floor(sampleRate * newStepSeconds);
+      }
+    });
+
+    // Set up seconds visible input event listener
+    const secondsVisibleInput = document.getElementById('secondsVisibleInput');
+    secondsVisibleInput.addEventListener('input', (e) => {
+      const newSeconds = parseFloat(e.target.value);
+      if (!isNaN(newSeconds) && newSeconds > 0) {
+        secondsVisible = newSeconds;
+        samplesVisible = Math.floor(sampleRate * secondsVisible);
+        draw();
+        drawScales();
+      }
+    });
 
     // Add animation variables after the other global variables
     let isScrolling = false;
